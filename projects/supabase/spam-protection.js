@@ -1,24 +1,14 @@
 // Chill MVP anti-spam protection
-// Client-side protection for accidental double clicks and simple bot-like spam.
-// Important: this is MVP-level protection. Production anti-spam should also include backend / edge-function rate limits.
+// Combines fast client-side protection with server-side Supabase Edge Function rate limits.
 
 (function () {
+  const SUPABASE_URL = 'https://sfqrtvmiuqtgsahhiiyx.supabase.co';
+  const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/anti-spam-check`;
+
   const LIMITS = {
-    auth: {
-      maxAttempts: 5,
-      windowMs: 10 * 60 * 1000,
-      cooldownMs: 30 * 1000
-    },
-    write: {
-      maxAttempts: 12,
-      windowMs: 60 * 1000,
-      cooldownMs: 15 * 1000
-    },
-    destructive: {
-      maxAttempts: 8,
-      windowMs: 60 * 1000,
-      cooldownMs: 20 * 1000
-    }
+    auth: { maxAttempts: 5, windowMs: 10 * 60 * 1000, cooldownMs: 30 * 1000 },
+    write: { maxAttempts: 12, windowMs: 60 * 1000, cooldownMs: 15 * 1000 },
+    destructive: { maxAttempts: 8, windowMs: 60 * 1000, cooldownMs: 20 * 1000 }
   };
 
   const storeKey = 'chill_spam_protection_v1';
@@ -42,10 +32,7 @@
 
   function getBucket(key) {
     const data = readStore();
-    return data[key] || {
-      attempts: [],
-      blockedUntil: 0
-    };
+    return data[key] || { attempts: [], blockedUntil: 0 };
   }
 
   function setBucket(key, bucket) {
@@ -63,7 +50,7 @@
     return !field || !field.value.trim();
   }
 
-  function checkAction(type, label) {
+  function checkLocalAction(type, label) {
     const config = LIMITS[type] || LIMITS.write;
     const key = `rate:${type}`;
     const current = now();
@@ -105,6 +92,68 @@
     return true;
   }
 
+  async function getAuthHeaders() {
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+
+    try {
+      const session = await window.chillSupabase?.getSession?.();
+      const token = session?.access_token;
+
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+    } catch (error) {
+      console.warn('Auth token unavailable for anti-spam check', error);
+    }
+
+    return headers;
+  }
+
+  function getActorHint(type) {
+    if (type !== 'auth') return '';
+
+    const email =
+      document.getElementById('auth-modal-email')?.value ||
+      document.getElementById('auth-email')?.value ||
+      '';
+
+    return String(email).toLowerCase().trim();
+  }
+
+  async function checkServerAction(type, label) {
+    try {
+      const response = await fetch(EDGE_FUNCTION_URL, {
+        method: 'POST',
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({
+          type,
+          action: label,
+          actorHint: getActorHint(type)
+        })
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok || data.allowed === false) {
+        showToast(data.message || 'Слишком много действий. Попробуйте позже.');
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.warn('Server anti-spam check failed open', error);
+      return true;
+    }
+  }
+
+  async function allow(type, label, doubleClickDelay) {
+    if (!preventDoubleClick(label, doubleClickDelay)) return false;
+    if (!checkLocalAction(type, label)) return false;
+    return checkServerAction(type, label);
+  }
+
   function protectButton(button, lockedText = 'Подождите...') {
     if (!button) return () => {};
 
@@ -142,28 +191,25 @@
     addHoneypotToAuthModal();
 
     const observer = new MutationObserver(addHoneypotToAuthModal);
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
+    observer.observe(document.body, { childList: true, subtree: true });
   }
 
   window.chillSpamProtection = {
-    allowAuth(label = 'авторизация') {
+    async allowAuth(label = 'авторизация') {
       if (!checkHoneypot()) {
         showToast('Защита от спама сработала');
         return false;
       }
 
-      return preventDoubleClick('auth', 1200) && checkAction('auth', label);
+      return allow('auth', label, 1200);
     },
 
-    allowWrite(label = 'запись данных') {
-      return preventDoubleClick(label, 700) && checkAction('write', label);
+    async allowWrite(label = 'запись данных') {
+      return allow('write', label, 700);
     },
 
-    allowDestructive(label = 'удаление данных') {
-      return preventDoubleClick(label, 900) && checkAction('destructive', label);
+    async allowDestructive(label = 'удаление данных') {
+      return allow('destructive', label, 900);
     },
 
     protectButton
