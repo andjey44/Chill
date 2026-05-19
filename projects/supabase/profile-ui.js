@@ -23,6 +23,10 @@
   recipesScript.src = 'supabase/recipes-catalog.js';
   document.head.appendChild(recipesScript);
 
+  const recipeShoppingSyncScript = document.createElement('script');
+  recipeShoppingSyncScript.src = 'supabase/recipe-shopping-sync.js';
+  document.head.appendChild(recipeShoppingSyncScript);
+
   const api = window.chillSupabase;
 
   function ensureProfileCard() {
