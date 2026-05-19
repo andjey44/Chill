@@ -78,6 +78,15 @@
     showToast(fallbackMessage);
   }
 
+  function normalizeName(value) {
+    return String(value || '').toLowerCase().trim();
+  }
+
+  function getDefaultExpiryDate(category = 'other') {
+    const days = CATEGORY_DEFAULT_DAYS?.[category] || 7;
+    return addDays(new Date(), days);
+  }
+
   function resetPersonalAnalytics() {
     eaten = [];
     wasted = [];
@@ -348,9 +357,31 @@
     const item = shopping.find(s => s.id === id);
     if (!item) return;
 
-    await supabaseApi.updateShoppingItemBought(id, !item.bought);
+    const nextBought = !item.bought;
+
+    await supabaseApi.updateShoppingItemBought(id, nextBought);
+
+    if (nextBought) {
+      const alreadyInFridge = products.some(product => normalizeName(product.name) === normalizeName(item.name));
+
+      if (!alreadyInFridge) {
+        await supabaseApi.addProduct({
+          name: item.name,
+          category: 'other',
+          expiry_date: getDefaultExpiryDate('other'),
+          price: 0
+        });
+        showToast(`✓ ${item.name} куплен и добавлен в холодильник`);
+      } else {
+        showToast(`${item.name} уже есть в холодильнике`);
+      }
+    }
+
     await syncShoppingFromCloud();
-    renderShopping();
+    await syncProductsFromCloud();
+    render();
+
+    if (window.renderChillProfile) await window.renderChillProfile();
   };
 
   window.removeShoppingItem = async function (id) {
