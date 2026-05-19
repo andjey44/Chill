@@ -18,13 +18,13 @@
 
   const supabaseApi = window.chillSupabase;
 
-  function spamGuard(type, label) {
+  async function spamGuard(type, label) {
     const guard = window.chillSpamProtection;
     if (!guard) return true;
 
-    if (type === 'auth') return guard.allowAuth(label);
-    if (type === 'destructive') return guard.allowDestructive(label);
-    return guard.allowWrite(label);
+    if (type === 'auth') return await guard.allowAuth(label);
+    if (type === 'destructive') return await guard.allowDestructive(label);
+    return await guard.allowWrite(label);
   }
 
   async function hasPremiumAccessOrShowPaywall() {
@@ -173,7 +173,7 @@
   }
 
   window.signUpChill = async function () {
-    if (!spamGuard('auth', 'регистрация')) return;
+    if (!(await spamGuard('auth', 'регистрация'))) return;
 
     const email = document.getElementById('auth-email').value.trim();
     const password = document.getElementById('auth-password').value.trim();
@@ -196,7 +196,7 @@
   };
 
   window.signInChill = async function () {
-    if (!spamGuard('auth', 'вход')) return;
+    if (!(await spamGuard('auth', 'вход'))) return;
 
     const email = document.getElementById('auth-email').value.trim();
     const password = document.getElementById('auth-password').value.trim();
@@ -219,7 +219,7 @@
   };
 
   window.signOutChill = async function () {
-    if (!spamGuard('auth', 'выход')) return;
+    if (!(await spamGuard('auth', 'выход'))) return;
 
     await supabaseApi.signOut();
     products = [];
@@ -230,7 +230,7 @@
   };
 
   window.addProduct = async function () {
-    if (!spamGuard('write', 'добавление продукта')) return;
+    if (!(await spamGuard('write', 'добавление продукта'))) return;
 
     const session = await supabaseApi.getSession();
 
@@ -266,7 +266,7 @@
   };
 
   window.markEaten = async function (id) {
-    if (!spamGuard('write', 'отметка продукта')) return;
+    if (!(await spamGuard('write', 'отметка продукта'))) return;
 
     const session = await supabaseApi.getSession();
 
@@ -298,7 +298,7 @@
   };
 
   window.addManualShopping = async function () {
-    if (!spamGuard('write', 'добавление покупки')) return;
+    if (!(await spamGuard('write', 'добавление покупки'))) return;
 
     const session = await supabaseApi.getSession();
 
@@ -333,7 +333,7 @@
   };
 
   window.toggleBought = async function (id) {
-    if (!spamGuard('write', 'изменение покупки')) return;
+    if (!(await spamGuard('write', 'изменение покупки'))) return;
 
     const session = await supabaseApi.getSession();
 
@@ -354,7 +354,7 @@
   };
 
   window.removeShoppingItem = async function (id) {
-    if (!spamGuard('destructive', 'удаление покупки')) return;
+    if (!(await spamGuard('destructive', 'удаление покупки'))) return;
 
     const session = await supabaseApi.getSession();
 
@@ -376,7 +376,7 @@
   };
 
   window.clearBought = async function () {
-    if (!spamGuard('destructive', 'очистка покупок')) return;
+    if (!(await spamGuard('destructive', 'очистка покупок'))) return;
 
     const session = await supabaseApi.getSession();
 
