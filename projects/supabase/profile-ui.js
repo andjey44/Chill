@@ -15,6 +15,10 @@
   barcodeScript.src = 'supabase/barcode-scanner.js';
   document.head.appendChild(barcodeScript);
 
+  const recipeStatusScript = document.createElement('script');
+  recipeStatusScript.src = 'supabase/recipe-ingredient-status.js';
+  document.head.appendChild(recipeStatusScript);
+
   const recipesScript = document.createElement('script');
   recipesScript.src = 'supabase/recipes-catalog.js';
   document.head.appendChild(recipesScript);
@@ -71,13 +75,13 @@
     authSection.appendChild(profile);
 
     document.getElementById('profile-refresh-btn').addEventListener('click', async () => {
-      if (window.chillSpamProtection && !window.chillSpamProtection.allowWrite('обновление профиля')) return;
+      if (window.chillSpamProtection && !(await window.chillSpamProtection.allowWrite('обновление профиля'))) return;
       await renderProfile();
       showToast('Профиль обновлён');
     });
 
     document.getElementById('profile-buy-pro-btn').addEventListener('click', async () => {
-      if (window.chillSpamProtection && !window.chillSpamProtection.allowWrite('открытие подписки')) return;
+      if (window.chillSpamProtection && !(await window.chillSpamProtection.allowWrite('открытие подписки'))) return;
 
       if (window.chillPaywall) {
         window.chillPaywall.showPaywall();
