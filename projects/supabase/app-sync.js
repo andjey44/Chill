@@ -18,6 +18,15 @@
 
   const supabaseApi = window.chillSupabase;
 
+  function spamGuard(type, label) {
+    const guard = window.chillSpamProtection;
+    if (!guard) return true;
+
+    if (type === 'auth') return guard.allowAuth(label);
+    if (type === 'destructive') return guard.allowDestructive(label);
+    return guard.allowWrite(label);
+  }
+
   async function hasPremiumAccessOrShowPaywall() {
     const session = await supabaseApi.getSession();
 
@@ -92,13 +101,8 @@
         wastedAt: event.created_at
       };
 
-      if (event.event_type === 'eaten') {
-        eaten.push(item);
-      }
-
-      if (event.event_type === 'wasted') {
-        wasted.push(item);
-      }
+      if (event.event_type === 'eaten') eaten.push(item);
+      if (event.event_type === 'wasted') wasted.push(item);
     });
   }
 
@@ -121,13 +125,8 @@
 
       render();
 
-      if (window.renderChillProfile) {
-        await window.renderChillProfile();
-      }
-
-      if (window.chillPaywall) {
-        await window.chillPaywall.refreshPaywall();
-      }
+      if (window.renderChillProfile) await window.renderChillProfile();
+      if (window.chillPaywall) await window.chillPaywall.refreshPaywall();
     } else {
       authStatus.textContent = 'Гостевой режим: данные хранятся только в этом браузере.';
       if (authForm) authForm.style.display = 'none';
@@ -140,13 +139,9 @@
       render();
 
       const profileCard = document.getElementById('profile-card');
-      if (profileCard) {
-        profileCard.style.display = 'none';
-      }
+      if (profileCard) profileCard.style.display = 'none';
 
-      if (window.chillPaywall) {
-        await window.chillPaywall.refreshPaywall();
-      }
+      if (window.chillPaywall) await window.chillPaywall.refreshPaywall();
     }
   }
 
@@ -178,6 +173,8 @@
   }
 
   window.signUpChill = async function () {
+    if (!spamGuard('auth', 'регистрация')) return;
+
     const email = document.getElementById('auth-email').value.trim();
     const password = document.getElementById('auth-password').value.trim();
 
@@ -193,17 +190,14 @@
       return;
     }
 
-    if (data?.session) {
-      showToast('Регистрация успешна, вы вошли в аккаунт 🚀');
-    } else {
-      showToast('Регистрация успешна! Теперь войдите в аккаунт.');
-    }
-
+    showToast(data?.session ? 'Регистрация успешна, вы вошли в аккаунт 🚀' : 'Регистрация успешна! Теперь войдите в аккаунт.');
     if (window.closeAuthModal) window.closeAuthModal();
     await refreshAuthUI();
   };
 
   window.signInChill = async function () {
+    if (!spamGuard('auth', 'вход')) return;
+
     const email = document.getElementById('auth-email').value.trim();
     const password = document.getElementById('auth-password').value.trim();
 
@@ -225,6 +219,8 @@
   };
 
   window.signOutChill = async function () {
+    if (!spamGuard('auth', 'выход')) return;
+
     await supabaseApi.signOut();
     products = [];
     shopping = [];
@@ -233,8 +229,9 @@
     await refreshAuthUI();
   };
 
-  const originalAddProduct = window.addProduct;
   window.addProduct = async function () {
+    if (!spamGuard('write', 'добавление продукта')) return;
+
     const session = await supabaseApi.getSession();
 
     if (!session?.user) {
@@ -256,27 +253,21 @@
       return;
     }
 
-    await supabaseApi.addProduct({
-      name,
-      category,
-      expiry_date: expiryDate,
-      price
-    });
+    await supabaseApi.addProduct({ name, category, expiry_date: expiryDate, price });
 
     await syncProductsFromCloud();
     await syncProductEventsFromCloud();
     closeModal();
     render();
 
-    if (window.renderChillProfile) {
-      await window.renderChillProfile();
-    }
+    if (window.renderChillProfile) await window.renderChillProfile();
 
     showToast(`✓ ${name} сохранён в облаке`);
   };
 
-  const originalMarkEaten = window.markEaten;
   window.markEaten = async function (id) {
+    if (!spamGuard('write', 'отметка продукта')) return;
+
     const session = await supabaseApi.getSession();
 
     if (!session?.user) {
@@ -288,17 +279,12 @@
     if (!(await hasPremiumAccessOrShowPaywall())) return;
 
     const product = products.find(x => x.id === id);
-
     if (!product) return;
 
     await supabaseApi.markProductEaten(product);
 
     if (!shopping.find(s => s.name.toLowerCase() === product.name.toLowerCase())) {
-      await supabaseApi.addShoppingItem({
-        name: product.name,
-        category: product.category || 'other',
-        quantity: '1'
-      });
+      await supabaseApi.addShoppingItem({ name: product.name, category: product.category || 'other', quantity: '1' });
       await syncShoppingFromCloud();
     }
 
@@ -306,15 +292,14 @@
     await syncProductEventsFromCloud();
     render();
 
-    if (window.renderChillProfile) {
-      await window.renderChillProfile();
-    }
+    if (window.renderChillProfile) await window.renderChillProfile();
 
     showToast(`✓ ${product.name} съеден и больше не вернётся в холодильник`);
   };
 
-  const originalAddManualShopping = window.addManualShopping;
   window.addManualShopping = async function () {
+    if (!spamGuard('write', 'добавление покупки')) return;
+
     const session = await supabaseApi.getSession();
 
     if (!session?.user) {
@@ -335,27 +320,21 @@
       return;
     }
 
-    await supabaseApi.addShoppingItem({
-      name,
-      category: 'other',
-      quantity: '1',
-      bought: false
-    });
+    await supabaseApi.addShoppingItem({ name, category: 'other', quantity: '1', bought: false });
 
     input.value = '';
 
     await syncShoppingFromCloud();
     renderShopping();
 
-    if (window.renderChillProfile) {
-      await window.renderChillProfile();
-    }
+    if (window.renderChillProfile) await window.renderChillProfile();
 
     showToast('Товар сохранён в Supabase');
   };
 
-  const originalToggleBought = window.toggleBought;
   window.toggleBought = async function (id) {
+    if (!spamGuard('write', 'изменение покупки')) return;
+
     const session = await supabaseApi.getSession();
 
     if (!session?.user) {
@@ -369,15 +348,14 @@
     const item = shopping.find(s => s.id === id);
     if (!item) return;
 
-    const nextBought = !item.bought;
-
-    await supabaseApi.updateShoppingItemBought(id, nextBought);
+    await supabaseApi.updateShoppingItemBought(id, !item.bought);
     await syncShoppingFromCloud();
     renderShopping();
   };
 
-  const originalRemoveShoppingItem = window.removeShoppingItem;
   window.removeShoppingItem = async function (id) {
+    if (!spamGuard('destructive', 'удаление покупки')) return;
+
     const session = await supabaseApi.getSession();
 
     if (!session?.user) {
@@ -392,15 +370,14 @@
     await syncShoppingFromCloud();
     renderShopping();
 
-    if (window.renderChillProfile) {
-      await window.renderChillProfile();
-    }
+    if (window.renderChillProfile) await window.renderChillProfile();
 
     showToast('Товар полностью удалён');
   };
 
-  const originalClearBought = window.clearBought;
   window.clearBought = async function () {
+    if (!spamGuard('destructive', 'очистка покупок')) return;
+
     const session = await supabaseApi.getSession();
 
     if (!session?.user) {
@@ -422,9 +399,7 @@
     await syncShoppingFromCloud();
     renderShopping();
 
-    if (window.renderChillProfile) {
-      await window.renderChillProfile();
-    }
+    if (window.renderChillProfile) await window.renderChillProfile();
 
     showToast(`Удалено купленных товаров: ${boughtCount}`);
   };
