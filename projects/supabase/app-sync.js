@@ -17,6 +17,8 @@
   document.head.appendChild(paywallScript);
 
   const supabaseApi = window.chillSupabase;
+  let boughtToFridgeQueue = [];
+  let currentBoughtToFridgeItem = null;
 
   async function spamGuard(type, label) {
     const guard = window.chillSpamProtection;
@@ -82,14 +84,39 @@
     return String(value || '').toLowerCase().trim();
   }
 
-  function getDefaultExpiryDate(category = 'other') {
-    const days = CATEGORY_DEFAULT_DAYS?.[category] || 7;
-    return addDays(new Date(), days);
-  }
-
   function resetPersonalAnalytics() {
     eaten = [];
     wasted = [];
+  }
+
+  function fillProductModalFromShoppingItem(item) {
+    if (!item) return;
+
+    openModal();
+
+    const nameInput = document.getElementById('add-name');
+    const categoryInput = document.getElementById('add-category');
+    const expiryInput = document.getElementById('add-expiry');
+    const priceInput = document.getElementById('add-price');
+
+    if (nameInput) nameInput.value = item.name || '';
+    if (categoryInput) categoryInput.value = item.category || 'other';
+    if (expiryInput) expiryInput.value = '';
+    if (priceInput) priceInput.value = '';
+
+    setTimeout(() => expiryInput?.focus(), 80);
+  }
+
+  function openNextBoughtProductModal() {
+    currentBoughtToFridgeItem = boughtToFridgeQueue.shift() || null;
+
+    if (!currentBoughtToFridgeItem) {
+      showToast('Все купленные товары обработаны');
+      return;
+    }
+
+    fillProductModalFromShoppingItem(currentBoughtToFridgeItem);
+    showToast(`Заполните данные для: ${currentBoughtToFridgeItem.name}`);
   }
 
   async function syncProductEventsFromCloud() {
@@ -176,6 +203,7 @@
       ? cloudShopping.map(item => ({
           id: item.id,
           name: item.name,
+          category: item.category || 'other',
           bought: Boolean(item.bought)
         }))
       : [];
@@ -264,14 +292,24 @@
 
     await supabaseApi.addProduct({ name, category, expiry_date: expiryDate, price });
 
+    if (currentBoughtToFridgeItem && normalizeName(currentBoughtToFridgeItem.name) === normalizeName(name)) {
+      await supabaseApi.deleteShoppingItem(currentBoughtToFridgeItem.id);
+      currentBoughtToFridgeItem = null;
+    }
+
     await syncProductsFromCloud();
+    await syncShoppingFromCloud();
     await syncProductEventsFromCloud();
     closeModal();
     render();
 
     if (window.renderChillProfile) await window.renderChillProfile();
 
-    showToast(`✓ ${name} сохранён в облаке`);
+    showToast(`✓ ${name} сохранён в холодильнике`);
+
+    if (boughtToFridgeQueue.length > 0) {
+      setTimeout(openNextBoughtProductModal, 450);
+    }
   };
 
   window.markEaten = async function (id) {
@@ -357,29 +395,9 @@
     const item = shopping.find(s => s.id === id);
     if (!item) return;
 
-    const nextBought = !item.bought;
-
-    await supabaseApi.updateShoppingItemBought(id, nextBought);
-
-    if (nextBought) {
-      const alreadyInFridge = products.some(product => normalizeName(product.name) === normalizeName(item.name));
-
-      if (!alreadyInFridge) {
-        await supabaseApi.addProduct({
-          name: item.name,
-          category: 'other',
-          expiry_date: getDefaultExpiryDate('other'),
-          price: 0
-        });
-        showToast(`✓ ${item.name} куплен и добавлен в холодильник`);
-      } else {
-        showToast(`${item.name} уже есть в холодильнике`);
-      }
-    }
-
+    await supabaseApi.updateShoppingItemBought(id, !item.bought);
     await syncShoppingFromCloud();
-    await syncProductsFromCloud();
-    render();
+    renderShopping();
 
     if (window.renderChillProfile) await window.renderChillProfile();
   };
@@ -407,7 +425,7 @@
   };
 
   window.clearBought = async function () {
-    if (!(await spamGuard('destructive', 'очистка покупок'))) return;
+    if (!(await spamGuard('destructive', 'обработка купленных товаров'))) return;
 
     const session = await supabaseApi.getSession();
 
@@ -419,20 +437,15 @@
 
     if (!(await hasPremiumAccessOrShowPaywall())) return;
 
-    const boughtCount = shopping.filter(s => s.bought).length;
+    const boughtItems = shopping.filter(s => s.bought);
 
-    if (boughtCount === 0) {
+    if (boughtItems.length === 0) {
       showToast('Нет отмеченных купленных товаров');
       return;
     }
 
-    await supabaseApi.clearBoughtShoppingItems();
-    await syncShoppingFromCloud();
-    renderShopping();
-
-    if (window.renderChillProfile) await window.renderChillProfile();
-
-    showToast(`Удалено купленных товаров: ${boughtCount}`);
+    boughtToFridgeQueue = [...boughtItems];
+    openNextBoughtProductModal();
   };
 
   document.addEventListener('DOMContentLoaded', async () => {
