@@ -3,6 +3,10 @@
 (function () {
   if (!window.chillSupabase) return;
 
+  const spamProtectionScript = document.createElement('script');
+  spamProtectionScript.src = 'supabase/spam-protection.js';
+  document.head.appendChild(spamProtectionScript);
+
   const authModalScript = document.createElement('script');
   authModalScript.src = 'supabase/auth-modal.js';
   document.head.appendChild(authModalScript);
@@ -67,11 +71,14 @@
     authSection.appendChild(profile);
 
     document.getElementById('profile-refresh-btn').addEventListener('click', async () => {
+      if (window.chillSpamProtection && !window.chillSpamProtection.allowWrite('обновление профиля')) return;
       await renderProfile();
       showToast('Профиль обновлён');
     });
 
     document.getElementById('profile-buy-pro-btn').addEventListener('click', async () => {
+      if (window.chillSpamProtection && !window.chillSpamProtection.allowWrite('открытие подписки')) return;
+
       if (window.chillPaywall) {
         window.chillPaywall.showPaywall();
         return;
